@@ -17,10 +17,12 @@ $username = htmlspecialchars(preg_replace('/[^a-zA-Z0-9\-_]/', '', $username));
 $width = intval($_GET['width'] ?? 600);
 $height = intval($_GET['height'] ?? 400);
 
-// Generate contribution data
-$contributions = generateContributionData($username);
+// Generate contribution data using real GitHub API
+$contributionData = fetchRealGitHubData($username);
+$contributions = $contributionData['contributions'];
 $treeLevel = getTreeLevel($contributions);
-$linesOfCode = $contributions * 47;
+$linesOfCode = $contributionData['linesOfCode'];
+$apiStatus = $contributionData['status'];
 
 // Calculate tree dimensions
 $treeHeight = min(250, 60 + ($contributions * 0.15));
@@ -205,16 +207,193 @@ echo '<?xml version="1.0" encoding="UTF-8"?>';
 <?php
 
 /**
- * Generate contribution data based on username
+ * Fetch real GitHub data using GitHub API
  */
-function generateContributionData($username) {
+function fetchRealGitHubData($username) {
+    try {
+        // Fetch user data
+        $userData = fetchGitHubUser($username);
+        if (!$userData) {
+            return getFallbackData($username, 'User not found');
+        }
+        
+        // Fetch repositories
+        $reposData = fetchGitHubRepos($username);
+        
+        // Calculate contribution statistics
+        $stats = calculateContributionStats($userData, $reposData);
+        
+        return [
+            'contributions' => $stats['contributions'],
+            'linesOfCode' => $stats['linesOfCode'],
+            'status' => 'success'
+        ];
+        
+    } catch (Exception $e) {
+        error_log("GitHub API Error for $username: " . $e->getMessage());
+        return getFallbackData($username, $e->getMessage());
+    }
+}
+
+/**
+ * Fetch GitHub user data
+ */
+function fetchGitHubUser($username) {
+    $url = "https://api.github.com/users/" . urlencode($username);
+    
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => [
+                'Accept: application/vnd.github.v3+json',
+                'User-Agent: GitHub-Tree-SVG'
+            ],
+            'timeout' => 10
+        ]
+    ]);
+    
+    $response = @file_get_contents($url, false, $context);
+    
+    if ($response === false) {
+        throw new Exception('Failed to fetch user data');
+    }
+    
+    $userData = json_decode($response, true);
+    
+    if (!$userData || isset($userData['message'])) {
+        throw new Exception($userData['message'] ?? 'Invalid user data');
+    }
+    
+    return $userData;
+}
+
+/**
+ * Fetch GitHub repositories
+ */
+function fetchGitHubRepos($username) {
+    $allRepos = [];
+    $page = 1;
+    $maxPages = 3; // Limit for performance
+    
+    while ($page <= $maxPages) {
+        $url = "https://api.github.com/users/" . urlencode($username) . "/repos?per_page=100&page=$page&sort=updated&direction=desc";
+        
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => [
+                    'Accept: application/vnd.github.v3+json',
+                    'User-Agent: GitHub-Tree-SVG'
+                ],
+                'timeout' => 10
+            ]
+        ]);
+        
+        $response = @file_get_contents($url, false, $context);
+        
+        if ($response === false) {
+            break; // Stop on error
+        }
+        
+        $repos = json_decode($response, true);
+        
+        if (!is_array($repos) || empty($repos)) {
+            break; // No more repos
+        }
+        
+        $allRepos = array_merge($allRepos, $repos);
+        
+        if (count($repos) < 100) {
+            break; // Last page
+        }
+        
+        $page++;
+        usleep(200000); // 200ms delay to be respectful
+    }
+    
+    return $allRepos;
+}
+
+/**
+ * Calculate contribution statistics from real data
+ */
+function calculateContributionStats($userData, $reposData) {
+    $accountCreated = new DateTime($userData['created_at']);
+    $now = new DateTime();
+    $accountAgeYears = $accountCreated->diff($now)->days / 365;
+    
+    // Filter out forked repositories
+    $originalRepos = array_filter($reposData, function($repo) {
+        return !$repo['fork'];
+    });
+    
+    $totalContributions = 0;
+    $estimatedLinesOfCode = 0;
+    
+    // Base contributions from account metrics
+    $totalContributions += ($userData['public_repos'] ?? 0) * 12;
+    $totalContributions += min(($userData['followers'] ?? 0) * 5, 500);
+    
+    // Process repositories
+    foreach ($originalRepos as $repo) {
+        $repoSize = $repo['size'] ?? 0;
+        $stars = $repo['stargazers_count'] ?? 0;
+        $forks = $repo['forks_count'] ?? 0;
+        
+        // Lines of code estimation
+        $estimatedLinesOfCode += $repoSize * 30;
+        
+        // Contribution calculation
+        $repoContribution = min($repoSize * 0.12, 60);
+        $repoContribution += min($stars * 6, 180);
+        $repoContribution += min($forks * 10, 100);
+        
+        // Recent activity bonus
+        $lastUpdate = new DateTime($repo['updated_at']);
+        $daysSinceUpdate = $lastUpdate->diff($now)->days;
+        
+        if ($daysSinceUpdate < 30) {
+            $repoContribution *= 1.5;
+        } elseif ($daysSinceUpdate < 90) {
+            $repoContribution *= 1.2;
+        }
+        
+        $totalContributions += $repoContribution;
+    }
+    
+    // Account age factor
+    $ageMultiplier = min(1 + ($accountAgeYears * 0.6), 3);
+    $totalContributions *= $ageMultiplier;
+    
+    // Ensure minimum values for active accounts
+    if (count($originalRepos) > 0) {
+        $totalContributions = max($totalContributions, 120);
+        $estimatedLinesOfCode = max($estimatedLinesOfCode, 2000);
+    }
+    
+    return [
+        'contributions' => floor($totalContributions),
+        'linesOfCode' => floor($estimatedLinesOfCode)
+    ];
+}
+
+/**
+ * Get fallback data when API fails
+ */
+function getFallbackData($username, $reason) {
+    // Generate consistent fallback data based on username
     $seed = crc32($username);
     mt_srand($seed);
     
-    $base = strlen($username) * 30;
-    $random = mt_rand(100, 900);
+    $base = strlen($username) * 35;
+    $random = mt_rand(150, 800);
     
-    return $base + $random;
+    return [
+        'contributions' => $base + $random,
+        'linesOfCode' => ($base + $random) * 50,
+        'status' => 'fallback',
+        'reason' => $reason
+    ];
 }
 
 /**

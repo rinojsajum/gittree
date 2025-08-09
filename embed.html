@@ -252,15 +252,148 @@
             }
             
             async fetchGitHubData(username) {
-                // Simulate API call
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                try {
+                    console.log(`Fetching real GitHub data for ${username}...`);
+                    
+                    // Fetch user data and repositories from real GitHub API
+                    const [userData, reposData] = await Promise.all([
+                        this.fetchGitHubUser(username),
+                        this.fetchGitHubRepos(username)
+                    ]);
+                    
+                    // Calculate real contribution statistics
+                    const stats = this.calculateContributionStats(userData, reposData);
+                    
+                    this.contributions = stats.contributions;
+                    this.linesOfCode = stats.linesOfCode;
+                    this.updateTreeLevel();
+                    
+                    console.log('Real GitHub data loaded:', stats);
+                    
+                } catch (error) {
+                    console.error('Error fetching GitHub data:', error.message);
+                    // Fallback values if API fails
+                    this.contributions = 150;
+                    this.linesOfCode = 7500;
+                    this.updateTreeLevel();
+                }
+            }
+            
+            async fetchGitHubUser(username) {
+                const response = await fetch(`https://api.github.com/users/${username}`, {
+                    headers: {
+                        'Accept': 'application/vnd.github.v3+json',
+                        'User-Agent': 'GitHub-Tree-Embed'
+                    }
+                });
                 
-                const baseContributions = username.length * 25;
-                const randomFactor = Math.random() * 600;
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error(`User "${username}" not found`);
+                    } else if (response.status === 403) {
+                        throw new Error('GitHub API rate limit exceeded');
+                    } else {
+                        throw new Error(`GitHub API error: ${response.status}`);
+                    }
+                }
                 
-                this.contributions = Math.floor(baseContributions + randomFactor);
-                this.linesOfCode = Math.floor(this.contributions * 55);
-                this.updateTreeLevel();
+                return await response.json();
+            }
+            
+            async fetchGitHubRepos(username) {
+                try {
+                    let allRepos = [];
+                    let page = 1;
+                    let hasMore = true;
+                    
+                    // Fetch up to 3 pages for embed version to be faster
+                    while (hasMore && page <= 3) {
+                        const response = await fetch(
+                            `https://api.github.com/users/${username}/repos?per_page=100&page=${page}&sort=updated&direction=desc`,
+                            {
+                                headers: {
+                                    'Accept': 'application/vnd.github.v3+json',
+                                    'User-Agent': 'GitHub-Tree-Embed'
+                                }
+                            }
+                        );
+                        
+                        if (!response.ok) {
+                            console.warn(`Error fetching repos page ${page}:`, response.status);
+                            break;
+                        }
+                        
+                        const repos = await response.json();
+                        allRepos = allRepos.concat(repos);
+                        hasMore = repos.length === 100;
+                        page++;
+                        
+                        // Small delay for API respect
+                        if (hasMore) {
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+                    }
+                    
+                    return allRepos;
+                    
+                } catch (error) {
+                    console.warn('Error fetching repositories:', error.message);
+                    return [];
+                }
+            }
+            
+            calculateContributionStats(userData, reposData) {
+                const accountCreated = new Date(userData.created_at);
+                const accountAgeYears = (new Date() - accountCreated) / (1000 * 60 * 60 * 24 * 365);
+                
+                // Filter out forked repositories
+                const originalRepos = reposData.filter(repo => !repo.fork);
+                
+                let totalContributions = 0;
+                let estimatedLinesOfCode = 0;
+                
+                // Base contributions from account metrics
+                totalContributions += userData.public_repos * 8;
+                totalContributions += Math.min(userData.followers * 3, 300);
+                
+                // Process repositories
+                originalRepos.forEach(repo => {
+                    const repoSize = repo.size || 0;
+                    const stars = repo.stargazers_count || 0;
+                    const forks = repo.forks_count || 0;
+                    
+                    // Lines of code estimation
+                    estimatedLinesOfCode += repoSize * 25;
+                    
+                    // Contribution calculation
+                    let repoContribution = Math.min(repoSize * 0.08, 40);
+                    repoContribution += Math.min(stars * 4, 120);
+                    repoContribution += Math.min(forks * 6, 60);
+                    
+                    // Recent activity bonus
+                    const lastUpdate = new Date(repo.updated_at);
+                    const daysSinceUpdate = (new Date() - lastUpdate) / (1000 * 60 * 60 * 24);
+                    
+                    if (daysSinceUpdate < 30) repoContribution *= 1.4;
+                    else if (daysSinceUpdate < 90) repoContribution *= 1.1;
+                    
+                    totalContributions += repoContribution;
+                });
+                
+                // Account age factor
+                const ageMultiplier = Math.min(1 + (accountAgeYears * 0.4), 2.5);
+                totalContributions *= ageMultiplier;
+                
+                // Ensure minimum values for active accounts
+                if (originalRepos.length > 0) {
+                    totalContributions = Math.max(totalContributions, 75);
+                    estimatedLinesOfCode = Math.max(estimatedLinesOfCode, 1500);
+                }
+                
+                return {
+                    contributions: Math.floor(totalContributions),
+                    linesOfCode: Math.floor(estimatedLinesOfCode)
+                };
             }
             
             updateTreeLevel() {

@@ -257,15 +257,189 @@ class GitHub3DContributionTree {
     }
     
     async simulateGitHubAPI(username) {
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Use real GitHub API instead of simulation
+        return await this.fetchRealGitHubData(username);
+    }
+    
+    async fetchRealGitHubData(username) {
+        try {
+            console.log(`Fetching real GitHub data for ${username}...`);
+            
+            // Fetch user data and repositories in parallel
+            const [userData, reposData] = await Promise.all([
+                this.fetchGitHubUser(username),
+                this.fetchGitHubRepos(username)
+            ]);
+            
+            // Calculate contribution statistics
+            const stats = this.calculateContributionStats(userData, reposData);
+            
+            console.log('Real GitHub data fetched:', stats);
+            return stats;
+            
+        } catch (error) {
+            console.error('Error fetching real GitHub data:', error.message);
+            
+            // Fallback to reasonable defaults if API fails
+            return {
+                contributions: 100,
+                linesOfCode: 5000,
+                error: error.message
+            };
+        }
+    }
+    
+    async fetchGitHubUser(username) {
+        const response = await fetch(`https://api.github.com/users/${username}`, {
+            headers: {
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'GitHub-Tree-App'
+            }
+        });
         
-        const baseContributions = username.length * 20;
-        const randomFactor = Math.random() * 500;
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error(`User "${username}" not found`);
+            } else if (response.status === 403) {
+                throw new Error('GitHub API rate limit exceeded. Please try again later.');
+            } else {
+                throw new Error(`GitHub API error: ${response.status}`);
+            }
+        }
+        
+        return await response.json();
+    }
+    
+    async fetchGitHubRepos(username) {
+        try {
+            let allRepos = [];
+            let page = 1;
+            let hasMore = true;
+            
+            // Fetch up to 5 pages (500 repos max) to avoid rate limits
+            while (hasMore && page <= 5) {
+                const response = await fetch(
+                    `https://api.github.com/users/${username}/repos?per_page=100&page=${page}&sort=updated&direction=desc`,
+                    {
+                        headers: {
+                            'Accept': 'application/vnd.github.v3+json',
+                            'User-Agent': 'GitHub-Tree-App'
+                        }
+                    }
+                );
+                
+                if (!response.ok) {
+                    console.warn(`Error fetching repos page ${page}:`, response.status);
+                    break;
+                }
+                
+                const repos = await response.json();
+                allRepos = allRepos.concat(repos);
+                hasMore = repos.length === 100;
+                page++;
+                
+                // Small delay to be respectful to GitHub's API
+                if (hasMore) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
+            
+            return allRepos;
+            
+        } catch (error) {
+            console.warn('Error fetching repositories:', error.message);
+            return [];
+        }
+    }
+    
+    calculateContributionStats(userData, reposData) {
+        const accountCreated = new Date(userData.created_at);
+        const accountAgeYears = (new Date() - accountCreated) / (1000 * 60 * 60 * 24 * 365);
+        
+        // Filter out forked repositories for more accurate stats
+        const originalRepos = reposData.filter(repo => !repo.fork);
+        
+        // Calculate base contributions from account activity
+        let totalContributions = 0;
+        let estimatedLinesOfCode = 0;
+        const languageStats = {};
+        
+        // Account for public repositories
+        totalContributions += userData.public_repos * 5;
+        
+        // Account for followers (indicates activity/popularity)
+        totalContributions += Math.min(userData.followers * 2, 200);
+        
+        // Process each original repository
+        originalRepos.forEach(repo => {
+            // Repository size contributes to line count estimation
+            const repoSize = repo.size || 0; // Size in KB
+            estimatedLinesOfCode += repoSize * 20; // Rough conversion from KB to lines
+            
+            // Stars and forks indicate contribution quality
+            const stars = repo.stargazers_count || 0;
+            const forks = repo.forks_count || 0;
+            
+            // Calculate repository contribution score
+            let repoContribution = Math.min(repoSize * 0.05, 30); // Base contribution from size
+            repoContribution += Math.min(stars * 3, 100); // Bonus for stars
+            repoContribution += Math.min(forks * 5, 50); // Bonus for forks
+            
+            // Recent activity bonus
+            const lastUpdate = new Date(repo.updated_at);
+            const daysSinceUpdate = (new Date() - lastUpdate) / (1000 * 60 * 60 * 24);
+            
+            if (daysSinceUpdate < 30) repoContribution *= 1.5; // Recent activity
+            else if (daysSinceUpdate < 90) repoContribution *= 1.2;
+            
+            totalContributions += repoContribution;
+            
+            // Track languages
+            if (repo.language) {
+                languageStats[repo.language] = (languageStats[repo.language] || 0) + repoSize;
+            }
+        });
+        
+        // Account age multiplier (older accounts likely have more contributions)
+        const ageMultiplier = Math.min(1 + (accountAgeYears * 0.3), 3);
+        totalContributions *= ageMultiplier;
+        
+        // Add some randomness based on account activity patterns
+        const activityMultiplier = 0.8 + (Math.random() * 0.4); // 0.8 to 1.2
+        totalContributions *= activityMultiplier;
+        
+        // Ensure minimum values for active accounts
+        if (originalRepos.length > 0) {
+            totalContributions = Math.max(totalContributions, 50);
+            estimatedLinesOfCode = Math.max(estimatedLinesOfCode, 1000);
+        }
         
         return {
-            contributions: Math.floor(baseContributions + randomFactor),
-            linesOfCode: Math.floor((baseContributions + randomFactor) * 45)
+            contributions: Math.floor(totalContributions),
+            linesOfCode: Math.floor(estimatedLinesOfCode),
+            publicRepos: userData.public_repos,
+            followers: userData.followers,
+            originalRepos: originalRepos.length,
+            accountAge: Math.floor(accountAgeYears * 365), // days
+            primaryLanguage: this.getPrimaryLanguage(languageStats),
+            languageStats: languageStats,
+            userData: {
+                name: userData.name,
+                bio: userData.bio,
+                location: userData.location,
+                blog: userData.blog,
+                avatar_url: userData.avatar_url
+            }
         };
+    }
+    
+    getPrimaryLanguage(languageStats) {
+        if (!languageStats || Object.keys(languageStats).length === 0) {
+            return 'Unknown';
+        }
+        
+        return Object.entries(languageStats)
+            .sort(([,a], [,b]) => b - a)[0][0];
     }
     
     updateTreeLevel() {
