@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GitHub Tree Image Generator</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -56,13 +55,14 @@
             cursor: not-allowed;
         }
         
-        #tree3d {
+        #treeCanvas {
             width: 600px;
             height: 400px;
             margin: 20px auto;
             border: 1px solid #d0d7de;
             border-radius: 8px;
-            background: linear-gradient(135deg, #87CEEB 0%, #98FB98 100%);
+            display: block;
+            background: white;
         }
         
         .download-section {
@@ -125,7 +125,7 @@
             </div>
         </div>
         
-        <div id="tree3d"></div>
+        <canvas id="treeCanvas" width="600" height="400"></canvas>
         
         <div class="download-section" id="downloadSection" style="display: none;">
             <h3>📋 Use in Your GitHub README</h3>
@@ -152,87 +152,63 @@
     <script>
         class TreeImageGenerator {
             constructor() {
-                this.scene = null;
-                this.camera = null;
-                this.renderer = null;
-                this.treeGroup = null;
+                this.canvas = document.getElementById('treeCanvas');
+                this.ctx = this.canvas.getContext('2d');
                 
                 this.contributions = 0;
                 this.treeLevel = 'Seed';
                 this.username = '';
+                this.branches = [];
+                this.leaves = [];
                 
                 this.init();
                 this.setupEventListeners();
             }
             
             init() {
-                const container = document.getElementById('tree3d');
-                
-                // Scene setup
-                this.scene = new THREE.Scene();
-                this.scene.background = new THREE.Color(0x87CEEB);
-                
-                // Camera setup  
-                this.camera = new THREE.PerspectiveCamera(
-                    50,
-                    container.clientWidth / container.clientHeight,
-                    0.1,
-                    1000
-                );
-                this.camera.position.set(8, 6, 12);
-                this.camera.lookAt(0, 2, 0);
-                
-                // Renderer setup
-                this.renderer = new THREE.WebGLRenderer({ 
-                    antialias: true,
-                    preserveDrawingBuffer: true  // Important for image capture
-                });
-                this.renderer.setSize(container.clientWidth, container.clientHeight);
-                this.renderer.shadowMap.enabled = true;
-                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                container.appendChild(this.renderer.domElement);
-                
-                // Lighting
-                this.setupLighting();
-                
-                // Ground
-                this.setupGround();
-                
-                // Tree group
-                this.treeGroup = new THREE.Group();
-                this.scene.add(this.treeGroup);
-                
                 // Initial render
                 this.drawSeed();
-                this.render();
             }
             
-            setupLighting() {
-                // Ambient light
-                const ambientLight = new THREE.AmbientLight(0x404040, 0.7);
-                this.scene.add(ambientLight);
+            drawGround() {
+                const groundY = this.canvas.height - 50;
                 
-                // Main directional light
-                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-                directionalLight.position.set(15, 20, 10);
-                directionalLight.castShadow = true;
-                directionalLight.shadow.mapSize.width = 2048;
-                directionalLight.shadow.mapSize.height = 2048;
-                this.scene.add(directionalLight);
+                // Ground
+                this.ctx.fillStyle = '#7CB342';
+                this.ctx.fillRect(0, groundY, this.canvas.width, 50);
                 
-                // Fill light
-                const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-                fillLight.position.set(-10, 10, -10);
-                this.scene.add(fillLight);
+                // Grass
+                this.ctx.strokeStyle = '#4CAF50';
+                this.ctx.lineWidth = 1;
+                for (let i = 0; i < this.canvas.width; i += 6) {
+                    const grassHeight = Math.random() * 10 + 4;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(i, groundY);
+                    this.ctx.lineTo(i, groundY - grassHeight);
+                    this.ctx.stroke();
+                }
             }
             
-            setupGround() {
-                const groundGeometry = new THREE.PlaneGeometry(20, 20);
-                const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x7CB342 });
-                const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-                ground.rotation.x = -Math.PI / 2;
-                ground.receiveShadow = true;
-                this.scene.add(ground);
+            drawSeed() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Gradient background
+                const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+                gradient.addColorStop(0, '#87CEEB');
+                gradient.addColorStop(1, '#98FB98');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                this.drawGround();
+                
+                const centerX = this.canvas.width / 2;
+                const centerY = this.canvas.height - 50;
+                
+                // Draw seed
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.beginPath();
+                this.ctx.ellipse(centerX, centerY - 15, 10, 15, 0, 0, Math.PI * 2);
+                this.ctx.fill();
             }
             
             setupEventListeners() {
@@ -263,11 +239,8 @@
                     // Simulate GitHub API call
                     await this.fetchContributionData(username);
                     
-                    // Clear existing tree
-                    this.treeGroup.clear();
-                    
-                    // Generate new tree
-                    this.create3DTree();
+                                    // Generate new tree
+                this.create2DTree();
                     this.updateStats();
                     
                     // Enable download
@@ -447,18 +420,30 @@
                 this.treeGroup.add(seed);
             }
             
-            create3DTree() {
-                const trunkHeight = Math.min(8, 2 + (this.contributions * 0.008));
-                const trunkRadius = Math.max(0.2, this.contributions / 600);
+            create2DTree() {
+                this.branches = [];
+                this.leaves = [];
                 
-                this.createTrunk(trunkHeight, trunkRadius);
-                this.createBranches(trunkHeight, trunkRadius);
-                this.createLeaves();
+                const centerX = this.canvas.width / 2;
+                const groundY = this.canvas.height - 50;
+                const trunkHeight = Math.min(250, 80 + (this.contributions * 0.2));
+                const maxBranches = Math.min(18, Math.floor(this.contributions / 25) + 3);
                 
-                // Add username label
-                this.addUsernameLabel();
+                // Main trunk
+                this.branches.push({
+                    startX: centerX,
+                    startY: groundY,
+                    endX: centerX,
+                    endY: groundY - trunkHeight,
+                    thickness: Math.max(15, this.contributions / 40),
+                    level: 0
+                });
                 
-                this.render();
+                this.generateBranches(centerX, groundY - trunkHeight, trunkHeight * 0.6, 0, maxBranches);
+                this.generateLeaves();
+                
+                // Draw the complete tree
+                this.drawCompleteTree();
             }
             
             createTrunk(height, radius) {
@@ -558,15 +543,148 @@
                 this.renderer.render(this.scene, this.camera);
             }
             
+            generateBranches(x, y, remainingHeight, level, maxBranches) {
+                if (level >= 4 || remainingHeight < 25 || this.branches.length >= maxBranches) {
+                    return;
+                }
+                
+                const numBranches = Math.min(3, Math.max(1, Math.floor(this.contributions / 80) + 1));
+                
+                for (let i = 0; i < numBranches; i++) {
+                    const angle = (Math.PI / 5) * (i - numBranches / 2) + (Math.random() - 0.5) * 0.4;
+                    const length = remainingHeight * (0.6 + Math.random() * 0.3);
+                    const thickness = Math.max(2, 15 - level * 4);
+                    
+                    const endX = x + Math.sin(angle) * length;
+                    const endY = y - Math.cos(angle) * length;
+                    
+                    this.branches.push({
+                        startX: x,
+                        startY: y,
+                        endX: endX,
+                        endY: endY,
+                        thickness: thickness,
+                        level: level + 1
+                    });
+                    
+                    // Recursively generate more branches
+                    if (Math.random() > 0.3) {
+                        this.generateBranches(endX, endY, length * 0.7, level + 1, maxBranches);
+                    }
+                }
+            }
+            
+            generateLeaves() {
+                const leafCount = Math.min(120, this.contributions / 5);
+                
+                for (let i = 0; i < leafCount; i++) {
+                    // Find a random branch to attach leaf to
+                    const branch = this.branches[Math.floor(Math.random() * this.branches.length)];
+                    if (branch && branch.level >= 1) {
+                        const t = Math.random();
+                        const leafX = branch.startX + (branch.endX - branch.startX) * t;
+                        const leafY = branch.startY + (branch.endY - branch.startY) * t;
+                        
+                        this.leaves.push({
+                            x: leafX + (Math.random() - 0.5) * 25,
+                            y: leafY + (Math.random() - 0.5) * 25,
+                            size: Math.random() * 5 + 4,
+                            color: this.getLeafColor(),
+                            rotation: Math.random() * Math.PI * 2
+                        });
+                    }
+                }
+            }
+            
+            getLeafColor() {
+                const colors = ['#4CAF50', '#8BC34A', '#CDDC39', '#FFC107', '#FF9800'];
+                const season = Math.floor(this.contributions / 150) % colors.length;
+                return colors[season];
+            }
+            
+            drawCompleteTree() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Background
+                const gradient = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+                gradient.addColorStop(0, '#87CEEB');
+                gradient.addColorStop(1, '#98FB98');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                this.drawGround();
+                
+                // Draw all branches
+                this.branches.forEach(branch => {
+                    this.drawBranch(branch);
+                });
+                
+                // Draw all leaves
+                this.leaves.forEach(leaf => {
+                    this.drawLeaf(leaf);
+                });
+                
+                // Add username label
+                this.drawUsernameLabel();
+            }
+            
+            drawBranch(branch) {
+                this.ctx.strokeStyle = `hsl(${30 - branch.level * 5}, 60%, ${25 + branch.level * 5}%)`;
+                this.ctx.lineWidth = branch.thickness;
+                this.ctx.lineCap = 'round';
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(branch.startX, branch.startY);
+                this.ctx.lineTo(branch.endX, branch.endY);
+                this.ctx.stroke();
+            }
+            
+            drawLeaf(leaf) {
+                this.ctx.save();
+                this.ctx.translate(leaf.x, leaf.y);
+                this.ctx.rotate(leaf.rotation);
+                
+                // Draw realistic leaf shape
+                this.ctx.fillStyle = leaf.color;
+                this.ctx.beginPath();
+                
+                // Leaf shape using curves - looks like a real leaf
+                const size = leaf.size;
+                this.ctx.moveTo(0, -size);
+                this.ctx.quadraticCurveTo(size * 0.6, -size * 0.3, size * 0.3, 0);
+                this.ctx.quadraticCurveTo(size * 0.6, size * 0.3, 0, size);
+                this.ctx.quadraticCurveTo(-size * 0.6, size * 0.3, -size * 0.3, 0);
+                this.ctx.quadraticCurveTo(-size * 0.6, -size * 0.3, 0, -size);
+                this.ctx.fill();
+                
+                // Add leaf vein
+                this.ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, -size);
+                this.ctx.lineTo(0, size);
+                this.ctx.stroke();
+                
+                this.ctx.restore();
+            }
+            
+            drawUsernameLabel() {
+                this.ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                this.ctx.fillRect(10, 10, 200, 40);
+                this.ctx.strokeStyle = '#ddd';
+                this.ctx.strokeRect(10, 10, 200, 40);
+                
+                this.ctx.fillStyle = '#333';
+                this.ctx.font = 'bold 14px Arial';
+                this.ctx.fillText(`${this.username}'s GitHub Tree`, 20, 30);
+                this.ctx.font = '12px Arial';
+                this.ctx.fillStyle = '#666';
+                this.ctx.fillText(`${this.contributions} contributions`, 20, 45);
+            }
+            
             downloadImage() {
-                // Render the scene
-                this.render();
-                
-                // Get image data from canvas
-                const canvas = this.renderer.domElement;
-                
                 // Create download link
-                canvas.toBlob((blob) => {
+                this.canvas.toBlob((blob) => {
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
                     link.download = `${this.username}-github-tree.png`;
