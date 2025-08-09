@@ -6,14 +6,27 @@ An entertaining and interactive **3D visualization** that grows a virtual tree b
 
 ## 🚀 **Quick Embed for GitHub README**
 
-Add this to your GitHub README to show your live 3D contribution tree:
+### ⚡ Method 1: Live SVG (Recommended)
+Add this to your GitHub README for a live, animated tree:
 
 ```markdown
 <div align="center">
-  <img src="https://yourusername.github.io/3d-github-tree/embed.html?user=YOUR_GITHUB_USERNAME" 
+  <img src="https://yourusername.github.io/3d-github-tree/tree-svg.php?user=YOUR_GITHUB_USERNAME" 
        alt="My GitHub Contribution Tree" 
        width="600" 
        height="400"/>
+</div>
+```
+
+### 📸 Method 2: Static Image  
+1. Visit: `https://yourusername.github.io/3d-github-tree/generate-image.html`
+2. Enter your username and click "Generate Tree"
+3. Download the image
+4. Upload to your repository and use:
+
+```markdown
+<div align="center">
+  <img src="./github-tree.png" alt="My GitHub Contribution Tree" width="600"/>
 </div>
 ```
 

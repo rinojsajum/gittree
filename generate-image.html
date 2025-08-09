@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Tree Image Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f6f8fa;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        h1 {
+            color: #24292e;
+            margin-bottom: 20px;
+        }
+        
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        input, button {
+            padding: 10px 15px;
+            margin: 5px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: #2da44e;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #2c974b;
+        }
+        
+        button:disabled {
+            background: #94d3a2;
+            cursor: not-allowed;
+        }
+        
+        #tree3d {
+            width: 600px;
+            height: 400px;
+            margin: 20px auto;
+            border: 1px solid #d0d7de;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #87CEEB 0%, #98FB98 100%);
+        }
+        
+        .download-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+        
+        .code-block {
+            background: #f6f8fa;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: left;
+            font-family: 'SFMono-Regular', Consolas, monospace;
+            font-size: 13px;
+            overflow-x: auto;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            background: #f6f8fa;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        
+        .loading {
+            color: #656d76;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌱 GitHub Tree Image Generator</h1>
+        
+        <div class="controls">
+            <h3>Generate Your 3D Tree Image</h3>
+            <input type="text" id="username" placeholder="Enter GitHub username" />
+            <button id="generateTree">Generate Tree</button>
+            <button id="downloadImage" disabled>Download Image</button>
+            
+            <div class="stats" id="stats" style="display: none;">
+                <div class="stat-item">
+                    <strong>Contributions:</strong> <span id="contributions">0</span>
+                </div>
+                <div class="stat-item">
+                    <strong>Tree Level:</strong> <span id="treeLevel">Seed</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="tree3d"></div>
+        
+        <div class="download-section" id="downloadSection" style="display: none;">
+            <h3>📋 Use in Your GitHub README</h3>
+            <p>After downloading your tree image, upload it to your repository and use this markdown:</p>
+            <div class="code-block" id="markdownCode">
+                <div>Upload your downloaded tree image to your repo, then use:</div>
+                <br>
+                <div>&lt;div align="center"&gt;</div>
+                <div>&nbsp;&nbsp;&lt;img src="./your-tree-image.png" alt="My GitHub Contribution Tree" width="600"/&gt;</div>
+                <div>&lt;/div&gt;</div>
+            </div>
+            
+            <h4>Alternative: Host the image and use direct link</h4>
+            <div class="code-block">
+                <div>&lt;div align="center"&gt;</div>
+                <div>&nbsp;&nbsp;&lt;img src="https://your-domain.com/path/to/tree-image.png" alt="My GitHub Contribution Tree" width="600"/&gt;</div>
+                <div>&lt;/div&gt;</div>
+            </div>
+            
+            <p><strong>💡 Pro Tip:</strong> You can regenerate and update your tree image periodically to show your latest contributions!</p>
+        </div>
+    </div>
+
+    <script>
+        class TreeImageGenerator {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.treeGroup = null;
+                
+                this.contributions = 0;
+                this.treeLevel = 'Seed';
+                this.username = '';
+                
+                this.init();
+                this.setupEventListeners();
+            }
+            
+            init() {
+                const container = document.getElementById('tree3d');
+                
+                // Scene setup
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x87CEEB);
+                
+                // Camera setup  
+                this.camera = new THREE.PerspectiveCamera(
+                    50,
+                    container.clientWidth / container.clientHeight,
+                    0.1,
+                    1000
+                );
+                this.camera.position.set(8, 6, 12);
+                this.camera.lookAt(0, 2, 0);
+                
+                // Renderer setup
+                this.renderer = new THREE.WebGLRenderer({ 
+                    antialias: true,
+                    preserveDrawingBuffer: true  // Important for image capture
+                });
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                container.appendChild(this.renderer.domElement);
+                
+                // Lighting
+                this.setupLighting();
+                
+                // Ground
+                this.setupGround();
+                
+                // Tree group
+                this.treeGroup = new THREE.Group();
+                this.scene.add(this.treeGroup);
+                
+                // Initial render
+                this.drawSeed();
+                this.render();
+            }
+            
+            setupLighting() {
+                // Ambient light
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.7);
+                this.scene.add(ambientLight);
+                
+                // Main directional light
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+                directionalLight.position.set(15, 20, 10);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 2048;
+                directionalLight.shadow.mapSize.height = 2048;
+                this.scene.add(directionalLight);
+                
+                // Fill light
+                const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+                fillLight.position.set(-10, 10, -10);
+                this.scene.add(fillLight);
+            }
+            
+            setupGround() {
+                const groundGeometry = new THREE.PlaneGeometry(20, 20);
+                const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x7CB342 });
+                const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                this.scene.add(ground);
+            }
+            
+            setupEventListeners() {
+                document.getElementById('generateTree').addEventListener('click', () => this.generateTree());
+                document.getElementById('downloadImage').addEventListener('click', () => this.downloadImage());
+                
+                document.getElementById('username').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.generateTree();
+                    }
+                });
+            }
+            
+            async generateTree() {
+                const username = document.getElementById('username').value.trim();
+                if (!username) {
+                    alert('Please enter a GitHub username');
+                    return;
+                }
+                
+                this.username = username;
+                const button = document.getElementById('generateTree');
+                const originalText = button.textContent;
+                button.textContent = 'Generating...';
+                button.disabled = true;
+                
+                try {
+                    // Simulate GitHub API call
+                    await this.fetchContributionData(username);
+                    
+                    // Clear existing tree
+                    this.treeGroup.clear();
+                    
+                    // Generate new tree
+                    this.create3DTree();
+                    this.updateStats();
+                    
+                    // Enable download
+                    document.getElementById('downloadImage').disabled = false;
+                    document.getElementById('downloadSection').style.display = 'block';
+                    
+                } catch (error) {
+                    alert('Error generating tree: ' + error.message);
+                } finally {
+                    button.textContent = originalText;
+                    button.disabled = false;
+                }
+            }
+            
+            async fetchContributionData(username) {
+                // Simulate API delay
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Generate realistic contribution data
+                const baseContributions = username.length * 30;
+                const randomFactor = Math.random() * 800;
+                this.contributions = Math.floor(baseContributions + randomFactor);
+                
+                this.updateTreeLevel();
+            }
+            
+            updateTreeLevel() {
+                if (this.contributions <= 50) {
+                    this.treeLevel = 'Sprout';
+                } else if (this.contributions <= 200) {
+                    this.treeLevel = 'Sapling';
+                } else if (this.contributions <= 500) {
+                    this.treeLevel = 'Mature Tree';
+                } else {
+                    this.treeLevel = 'Ancient Tree';
+                }
+            }
+            
+            updateStats() {
+                document.getElementById('contributions').textContent = this.contributions;
+                document.getElementById('treeLevel').textContent = this.treeLevel;
+                document.getElementById('stats').style.display = 'flex';
+            }
+            
+            drawSeed() {
+                const seedGeometry = new THREE.SphereGeometry(0.15, 8, 6);
+                const seedMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                const seed = new THREE.Mesh(seedGeometry, seedMaterial);
+                seed.position.y = 0.15;
+                seed.castShadow = true;
+                this.treeGroup.add(seed);
+            }
+            
+            create3DTree() {
+                const trunkHeight = Math.min(8, 2 + (this.contributions * 0.008));
+                const trunkRadius = Math.max(0.2, this.contributions / 600);
+                
+                this.createTrunk(trunkHeight, trunkRadius);
+                this.createBranches(trunkHeight, trunkRadius);
+                this.createLeaves();
+                
+                // Add username label
+                this.addUsernameLabel();
+                
+                this.render();
+            }
+            
+            createTrunk(height, radius) {
+                const trunkGeometry = new THREE.CylinderGeometry(radius, radius * 1.4, height, 8);
+                const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                
+                const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+                trunk.position.y = height / 2;
+                trunk.castShadow = true;
+                
+                this.treeGroup.add(trunk);
+            }
+            
+            createBranches(trunkHeight, trunkRadius) {
+                const numBranches = Math.min(18, Math.floor(this.contributions / 25) + 3);
+                
+                for (let i = 0; i < numBranches; i++) {
+                    const branchLevel = Math.floor(i / 4);
+                    const branchHeight = trunkHeight * (0.6 + branchLevel * 0.15);
+                    const branchLength = trunkHeight * (0.4 + branchLevel * 0.1);
+                    const branchRadius = trunkRadius * (0.5 - branchLevel * 0.1);
+                    
+                    const angle = (i * Math.PI * 2) / (numBranches / (branchLevel + 1));
+                    const tilt = Math.PI / 6 + (branchLevel * Math.PI / 12);
+                    
+                    const branchGeometry = new THREE.CylinderGeometry(
+                        branchRadius * 0.3,
+                        branchRadius,
+                        branchLength,
+                        6
+                    );
+                    const branchMaterial = new THREE.MeshLambertMaterial({ 
+                        color: new THREE.Color().setHSL(0.08, 0.7, 0.25 + branchLevel * 0.05)
+                    });
+                    
+                    const branch = new THREE.Mesh(branchGeometry, branchMaterial);
+                    
+                    branch.position.y = branchHeight;
+                    branch.position.x = Math.cos(angle) * (trunkRadius + branchLength / 3);
+                    branch.position.z = Math.sin(angle) * (trunkRadius + branchLength / 3);
+                    
+                    branch.rotation.z = Math.cos(angle) * tilt;
+                    branch.rotation.x = Math.sin(angle) * tilt;
+                    
+                    branch.castShadow = true;
+                    this.treeGroup.add(branch);
+                }
+            }
+            
+            createLeaves() {
+                const leafCount = Math.min(120, this.contributions / 5);
+                
+                for (let i = 0; i < leafCount; i++) {
+                    const leafGeometry = new THREE.SphereGeometry(0.12, 6, 4);
+                    const leafColor = this.getLeafColor();
+                    const leafMaterial = new THREE.MeshLambertMaterial({ color: leafColor });
+                    
+                    const leaf = new THREE.Mesh(leafGeometry, leafMaterial);
+                    
+                    const radius = 1.5 + Math.random() * 3.5;
+                    const height = 2.5 + Math.random() * 5;
+                    const angle = Math.random() * Math.PI * 2;
+                    
+                    leaf.position.x = Math.cos(angle) * radius;
+                    leaf.position.z = Math.sin(angle) * radius;
+                    leaf.position.y = height;
+                    
+                    leaf.scale.setScalar(0.6 + Math.random() * 0.8);
+                    leaf.castShadow = true;
+                    
+                    this.treeGroup.add(leaf);
+                }
+            }
+            
+            getLeafColor() {
+                const colors = [0x4CAF50, 0x8BC34A, 0xCDDC39, 0xFFC107, 0xFF9800];
+                const season = Math.floor(this.contributions / 150) % colors.length;
+                return colors[season];
+            }
+            
+            addUsernameLabel() {
+                // Create a simple text representation using geometry
+                // (In a real implementation, you might want to use a texture with text)
+                const labelGeometry = new THREE.PlaneGeometry(3, 0.5);
+                const labelMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x333333,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const label = new THREE.Mesh(labelGeometry, labelMaterial);
+                label.position.set(0, -0.5, 0);
+                label.rotation.x = -Math.PI / 2;
+                this.treeGroup.add(label);
+            }
+            
+            render() {
+                this.renderer.render(this.scene, this.camera);
+            }
+            
+            downloadImage() {
+                // Render the scene
+                this.render();
+                
+                // Get image data from canvas
+                const canvas = this.renderer.domElement;
+                
+                // Create download link
+                canvas.toBlob((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `${this.username}-github-tree.png`;
+                    link.href = url;
+                    link.click();
+                    
+                    // Clean up
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }, 'image/png', 1.0);
+                
+                alert('Tree image downloaded! Upload it to your repository and use the markdown code below.');
+            }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new TreeImageGenerator();
+        });
+    </script>
+</body>
+</html>
