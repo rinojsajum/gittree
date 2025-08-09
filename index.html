@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D GitHub Contribution Tree</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div class="container" id="mainContainer">
+        <header id="mainHeader">
+            <h1>🌱 3D GitHub Contribution Tree 🌳</h1>
+            <p>Watch your coding activity grow into a beautiful 3D tree!</p>
+        </header>
+        
+        <div class="controls" id="mainControls">
+            <input type="text" id="username" placeholder="Enter GitHub username" value="">
+            <button id="growTree">Grow My Tree!</button>
+            <button id="reset">Reset Tree</button>
+            <button id="toggleEmbed">Embed Mode</button>
+        </div>
+        
+        <div class="stats" id="mainStats">
+            <div class="stat-item">
+                <span class="stat-label">Total Contributions:</span>
+                <span id="totalContributions">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Lines of Code:</span>
+                <span id="linesOfCode">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Tree Level:</span>
+                <span id="treeLevel">Seed</span>
+            </div>
+        </div>
+        
+        <div class="tree-container">
+            <div id="tree3d"></div>
+            <div class="growth-message" id="growthMessage"></div>
+            <div class="controls-3d" id="controls3d">
+                <div class="control-hint">🖱️ Drag to rotate • 🔍 Scroll to zoom</div>
+            </div>
+        </div>
+        
+        <div class="embed-info" id="embedInfo" style="display: none;">
+            <h3>📋 Embed in Your GitHub README</h3>
+            <p>Copy this markdown code to add your 3D tree to any GitHub README:</p>
+            <div class="code-block">
+                <code id="embedCode">Loading...</code>
+                <button id="copyEmbed">Copy Code</button>
+            </div>
+            <p class="embed-note">💡 The tree will automatically load with your GitHub username!</p>
+        </div>
+        
+        <div class="legend" id="mainLegend">
+            <h3>Tree Growth Stages:</h3>
+            <div class="stage-item">🌱 <strong>Seed (0 contributions):</strong> Just a tiny seed waiting to grow</div>
+            <div class="stage-item">🌿 <strong>Sprout (1-50 contributions):</strong> Small green shoot emerging</div>
+            <div class="stage-item">🌳 <strong>Sapling (51-200 contributions):</strong> Young tree with few branches</div>
+            <div class="stage-item">🌲 <strong>Mature Tree (201-500 contributions):</strong> Full tree with many branches</div>
+            <div class="stage-item">🌳 <strong>Ancient Tree (500+ contributions):</strong> Majestic tree with abundant foliage</div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
